@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, isAbort } from './api';
+import { api, getDataset, isAbort, setDataset } from './api';
 import { ArchitectureModal } from './components/ArchitectureModal';
 import { BriefModal } from './components/BriefModal';
 import { CommandMap } from './components/CommandMap';
@@ -10,10 +10,21 @@ import { KpiStrip } from './components/KpiStrip';
 import { ConfirmDialog } from './components/shared';
 import { SimulationOverlay } from './components/SimulationOverlay';
 import { TopBar } from './components/TopBar';
-import type { BriefResponse, CompactIncident, EvidenceResponse, FullIncident, HealthResponse, HeatmapPoint, SimulateResponse, Status, Summary } from './types';
+import type { BriefResponse, CompactIncident, Dataset, EvidenceResponse, FullIncident, HealthResponse, HeatmapPoint, IngestResponse, LiveSource, SimulateResponse, Status, Summary } from './types';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : 'Unexpected error');
 const FLASH_MS = 9000;
+
+function describeIngest(result: IngestResponse): string {
+  const parts = result.sources.map((source) => {
+    const name = source.source.charAt(0).toUpperCase() + source.source.slice(1);
+    if (source.status === 'not_configured') return `${name}: not configured`;
+    if (source.status === 'failed') return `${name}: failed (${source.message ?? 'error'})`;
+    return `${name}: ${source.retrieved_count} found, ${source.inserted_count} new, ${source.duplicate_count} duplicates, ${source.out_of_scope_count} off-topic`;
+  });
+  const incidents = result.pipeline ? ` → ${result.pipeline.incidents_after} live incidents (${result.pipeline.new_incident_ids.length} new)` : ' → nothing new to process';
+  return parts.join(' · ') + incidents;
+}
 const POLL_MS = 20000;
 
 type Panel<T> = { incidentId: string | null; data: T | null; loading: boolean; error: string | null };
@@ -46,13 +57,17 @@ export default function App() {
   const [evidence, setEvidence] = useState<Panel<EvidenceResponse> & { open: boolean }>({ ...closedPanel, open: false });
   const [brief, setBrief] = useState<Panel<BriefResponse> & { open: boolean }>({ ...closedPanel, open: false });
   const [archOpen, setArchOpen] = useState(false);
+  const [dataset, setDatasetState] = useState<Dataset>('demo');
+  const [fetching, setFetching] = useState(false);
 
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
 
   const loadAll = useCallback(async (): Promise<CompactIncident[] | null> => {
     setLoading(true);
+    const requested = getDataset();
     const [summaryResult, incidentResult, heatResult] = await Promise.allSettled([api.summary(), api.incidents(), api.heatmap()]);
+    if (getDataset() !== requested) return null; // the user switched datasets while this was in flight
     const errors: string[] = [];
     if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value);
     else errors.push(message(summaryResult.reason));
@@ -105,14 +120,15 @@ export default function App() {
   // Quiet background refresh so other operators' changes appear without a reload. The selected
   // card is reloaded only when its compact record actually changed.
   const busyRef = useRef(false);
-  busyRef.current = simulating || resetting;
+  busyRef.current = simulating || resetting || fetching;
   const incidentsRef = useRef(incidents);
   incidentsRef.current = incidents;
   useEffect(() => {
     const timer = setInterval(async () => {
       if (busyRef.current || document.hidden) return;
+      const requested = getDataset();
       const [summaryResult, incidentResult, heatResult] = await Promise.allSettled([api.summary(), api.incidents(), api.heatmap()]);
-      if (busyRef.current) return;
+      if (busyRef.current || getDataset() !== requested) return;
       if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value);
       if (heatResult.status === 'fulfilled') setHeatmap(heatResult.value);
       if (incidentResult.status === 'fulfilled') {
@@ -197,6 +213,52 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [flash]);
 
+  const switchDataset = useCallback(
+    (next: Dataset) => {
+      if (next === getDataset()) return;
+      setDataset(next);
+      setDatasetState(next);
+      setEvidence((current) => ({ ...current, open: false }));
+      setBrief((current) => ({ ...current, open: false }));
+      setFlash({ newIds: new Set(), updatedIds: new Set() });
+      setSimError(null);
+      setBanner(next === 'live' ? 'Live web data: public reports from Tavily/Apify, processed by the same pipeline. Unverified.' : null);
+      setFilter('active');
+      setSelectedId(null);
+      setDetail(null);
+      setIncidents([]);
+      setSummary(null);
+      setHeatmap([]);
+      setLoaded(false);
+      loadAll();
+    },
+    [loadAll],
+  );
+
+  const fetchLive = useCallback(async () => {
+    const sources = (Object.entries(health?.live_sources ?? {}) as [LiveSource, boolean][]).filter(([, on]) => on).map(([name]) => name);
+    if (sources.length === 0) return;
+    setFetching(true);
+    setSimError(null);
+    setBanner(`Fetching from ${sources.join(' + ')}… this can take up to a couple of minutes for Apify.`);
+    try {
+      const result = await api.ingest(sources);
+      await loadAll();
+      if (result.pipeline) {
+        setFlash({ newIds: new Set(result.pipeline.new_incident_ids), updatedIds: new Set(result.pipeline.updated_incident_ids) });
+        const top = result.pipeline.new_incident_ids[0];
+        if (top) setSelectedId((current) => current ?? top);
+      }
+      if (result.status === 'unavailable') setSimError(`Live fetch: ${describeIngest(result)}`);
+      else setBanner(describeIngest(result));
+    } catch (error) {
+      setBanner(null);
+      setSimError(`Live fetch failed: ${message(error)}`);
+    } finally {
+      setFetching(false);
+    }
+  }, [health, loadAll]);
+
   const runReset = useCallback(async () => {
     setConfirmReset(false);
     setResetting(true);
@@ -213,7 +275,7 @@ export default function App() {
       setDetail(null);
       setSelectedId(result.default_incident_id);
       setDetailNonce((value) => value + 1);
-      setBanner('Demo reset to the baseline data.');
+      setBanner(getDataset() === 'live' ? 'Live data cleared. Use “Fetch live data” to import again.' : 'Demo reset to the baseline data.');
     } catch (error) {
       setSimError(`Reset failed: ${message(error)}`);
     } finally {
@@ -237,10 +299,14 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen min-w-[1180px] flex-col overflow-hidden">
       <TopBar
+        dataset={dataset}
+        onDatasetChange={switchDataset}
+        onFetchLive={fetchLive}
+        fetching={fetching}
         onSimulate={runSimulation}
         onReset={() => setConfirmReset(true)}
         onArchitecture={() => setArchOpen(true)}
-        busy={simulating || resetting}
+        busy={simulating || resetting || fetching}
         simulating={simulating}
         health={health}
       />
@@ -253,9 +319,9 @@ export default function App() {
             simError || loadError ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-ss-accent/30 bg-ss-accent/10 text-cyan-100'
           }`}
         >
-          <span>{simError ? `Simulation failed: ${simError}. The map still shows the previous state.` : loadError && loaded ? `Some data could not be refreshed: ${loadError}` : banner}</span>
+          <span>{simError ? (simError.startsWith('Live') ? simError : `Simulation failed: ${simError}. The map still shows the previous state.`) : loadError && loaded ? `Some data could not be refreshed: ${loadError}` : banner}</span>
           <span className="flex gap-2">
-            {simError && (
+            {simError && !simError.startsWith('Live') && (
               <button onClick={runSimulation} className="rounded border border-red-300/40 px-2 py-0.5 hover:bg-red-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white">Retry</button>
             )}
             {loadError && !simError && (
@@ -280,6 +346,7 @@ export default function App() {
           counts={counts}
           newIds={flash.newIds}
           updatedIds={flash.updatedIds}
+          emptyMessage={dataset === 'live' && incidents.length === 0 ? 'No live data yet. Click “Fetch live data” to import public web reports.' : undefined}
         />
         <section className="relative min-h-0 min-w-0" aria-label="Map">
           <CommandMap incidents={incidents} selectedId={selectedId} selected={selectedDetail} heatmap={heatmap} onSelect={select}>
@@ -320,9 +387,9 @@ export default function App() {
       <ArchitectureModal open={archOpen} onClose={() => setArchOpen(false)} />
       <ConfirmDialog
         open={confirmReset}
-        title="Reset the demo?"
-        body="This rebuilds the synthetic baseline (about 300 reports) through the same pipeline and discards simulated batches and status changes."
-        confirmLabel="Reset demo"
+        title={dataset === 'live' ? 'Clear live data?' : 'Reset the demo?'}
+        body={dataset === 'live' ? 'This deletes all ingested live web reports and their incidents. The demo dataset is not affected.' : 'This rebuilds the synthetic baseline (about 300 reports) through the same pipeline and discards simulated batches and status changes.'}
+        confirmLabel={dataset === 'live' ? 'Clear live data' : 'Reset demo'}
         onConfirm={runReset}
         onCancel={() => setConfirmReset(false)}
       />

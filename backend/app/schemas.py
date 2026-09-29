@@ -211,6 +211,11 @@ class EvidenceReport(BaseModel):
     cluster_score: Optional[float]
     cluster_details: Optional[dict[str, float]]
     extraction_mode: Optional[str]
+    # Present only for live-ingested reports.
+    origin: Optional[str] = None
+    url: Optional[str] = None
+    title: Optional[str] = None
+    published_at: Optional[str] = None
 
 
 class ExtractionSummary(BaseModel):
@@ -292,3 +297,45 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     extraction_mode: str
     llm_configured: bool
+    live_sources: dict[str, bool] = Field(default_factory=dict)
+
+
+class IngestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sources: list[Literal["tavily", "apify"]] = Field(default_factory=lambda: ["tavily", "apify"], min_length=1)
+
+
+class IngestSourceResult(BaseModel):
+    source: str
+    status: Literal["ok", "empty", "failed", "not_configured", "skipped"]
+    retrieved_count: int
+    normalized_count: int
+    inserted_count: int
+    duplicate_count: int
+    rejected_count: int
+    out_of_scope_count: int
+    clustered_count: int
+    message: Optional[str]
+
+
+class IngestPipelineSummary(BaseModel):
+    received: int
+    out_of_scope: int
+    duplicates: int
+    located: int
+    unlocated: int
+    incidents_before: int
+    incidents_after: int
+    batch_incident_count: int
+    new_incident_ids: list[str]
+    updated_incident_ids: list[str]
+    elapsed_ms: int
+
+
+class IngestResponse(BaseModel):
+    dataset: Literal["live"]
+    status: Literal["ok", "partial", "unavailable"]
+    batch_id: Optional[str]
+    sources: list[IngestSourceResult]
+    pipeline: Optional[IngestPipelineSummary]

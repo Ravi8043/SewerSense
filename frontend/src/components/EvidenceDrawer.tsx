@@ -121,6 +121,16 @@ export function EvidenceDrawer({ open, incidentId, incidentTitle, evidence, load
                         <span className="shrink-0 text-ss-textmuted">{formatTime(report.created_at)}</span>
                       </div>
                       <p className="text-[13px] leading-snug text-ss-text">“{report.raw_text}”</p>
+                      {report.url && (
+                        <a
+                          href={report.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1.5 inline-flex max-w-full items-center gap-1 truncate text-[12px] text-emerald-300 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ss-accent"
+                        >
+                          {report.origin === 'apify' ? 'Apify' : 'Tavily'} source: {new URL(report.url).hostname.replace(/^www./, '')} ↗
+                        </a>
+                      )}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
                         <span className="rounded border border-ss-border px-1.5 py-px text-ss-textmuted">{GEO_LABELS[report.geo_quality]}</span>
                         {report.is_duplicate ? (

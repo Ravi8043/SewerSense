@@ -321,12 +321,14 @@ def _incident_reports(spec: IncidentSpec, now: datetime, rng: random.Random, han
     return result
 
 
-def _out_of_scope(now: datetime) -> list[GeneratedReport]:
+def _out_of_scope(now: datetime, seed: int = 42) -> list[GeneratedReport]:
     reports = []
     for index, (source, text) in enumerate(OUT_OF_SCOPE):
         created = now - timedelta(hours=index * 2 + 1.5)
         handle = f"{source}_misc_{900 + index:03d}"
-        reports.append(GeneratedReport(IncomingReport(id=_stable_id("OUT", handle, _iso(created), text), source=source, source_handle=handle, raw_text=text, created_at=_iso(created)), f"OUT-{index}"))
+        # Seed 42 keeps its original ids; later batches must not collide with it within the same second.
+        report_id = _stable_id("OUT", handle, _iso(created), text) if seed == 42 else _stable_id("OUT", handle, _iso(created), text, str(seed))
+        reports.append(GeneratedReport(IncomingReport(id=report_id, source=source, source_handle=handle, raw_text=text, created_at=_iso(created)), f"OUT-{index}"))
     return reports
 
 
@@ -372,7 +374,7 @@ def generate_batch(n: int = SIMULATION_REPORT_COUNT, now: datetime | None = None
         reports.extend(_incident_reports(spec, now, rng, counters))
     if hero and len(reports) != 96:
         raise AssertionError(f"Batch composition drifted: {len(reports)} in-scope reports")
-    reports.extend(_out_of_scope(now))
+    reports.extend(_out_of_scope(now, seed))
     return sorted(reports, key=lambda item: item.report.created_at)
 
 

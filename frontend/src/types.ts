@@ -104,6 +104,11 @@ export interface EvidenceReport {
   cluster_score: number | null;
   cluster_details: Record<'semantic' | 'geographic' | 'temporal' | 'category', number> | null;
   extraction_mode: string | null;
+  // Present only for live-ingested reports.
+  origin?: string | null;
+  url?: string | null;
+  title?: string | null;
+  published_at?: string | null;
 }
 
 export interface EvidenceResponse {
@@ -167,4 +172,42 @@ export interface HealthResponse {
   status: 'ok';
   extraction_mode: string;
   llm_configured: boolean;
+  live_sources?: Record<LiveSource, boolean>;
+}
+
+/** demo = deterministic synthetic dataset; live = reports ingested from Tavily/Apify. */
+export type Dataset = 'demo' | 'live';
+export type LiveSource = 'tavily' | 'apify';
+
+export interface IngestSourceResult {
+  source: LiveSource;
+  status: 'ok' | 'empty' | 'failed' | 'not_configured' | 'skipped';
+  retrieved_count: number;
+  normalized_count: number;
+  inserted_count: number;
+  duplicate_count: number;
+  rejected_count: number;
+  out_of_scope_count: number;
+  clustered_count: number;
+  message: string | null;
+}
+
+export interface IngestResponse {
+  dataset: 'live';
+  status: 'ok' | 'partial' | 'unavailable';
+  batch_id: string | null;
+  sources: IngestSourceResult[];
+  pipeline: {
+    received: number;
+    out_of_scope: number;
+    duplicates: number;
+    located: number;
+    unlocated: number;
+    incidents_before: number;
+    incidents_after: number;
+    batch_incident_count: number;
+    new_incident_ids: string[];
+    updated_incident_ids: string[];
+    elapsed_ms: number;
+  } | null;
 }

@@ -11,7 +11,10 @@ from pathlib import Path
 _TEMP = tempfile.mkdtemp(prefix="sewersense-tests-")
 os.environ["SEWERSENSE_DATA_DIR"] = _TEMP
 os.environ["SEWERSENSE_DB_PATH"] = str(Path(_TEMP) / "test.sqlite")
-os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ["SEWERSENSE_SKIP_DOTENV"] = "1"  # never let a developer's real .env reach the test suite
+os.environ["SEWERSENSE_LIVE_DB_PATH"] = str(Path(_TEMP) / "test-live.sqlite")
+for _key in ("ANTHROPIC_API_KEY", "TAVILY_API_KEY", "APIFY_API_TOKEN", "APIFY_ACTOR_ID"):
+    os.environ.pop(_key, None)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest  # noqa: E402

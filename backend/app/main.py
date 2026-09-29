@@ -15,6 +15,7 @@ from . import config, db, service
 from .brief import BriefNotFound, generate_brief
 from .db import load_json, rows_to_dicts
 from .extraction_providers import get_provider
+from .ingestion import configured_sources, run_ingestion
 from .pipeline import hydrate_incident
 from .schemas import (
     BriefResponse,
@@ -22,6 +23,8 @@ from .schemas import (
     EvidenceResponse,
     FullIncident,
     HealthResponse,
+    IngestRequest,
+    IngestResponse,
     ResetResponse,
     SimulateResponse,
     StatusResponse,
@@ -33,8 +36,21 @@ from .schemas import (
 _write_lock = threading.Lock()
 
 
+Dataset = Literal["demo", "live"]
+
+
 def database_path() -> str:
     return str(config.DATABASE_PATH)
+
+
+def live_database_path() -> str:
+    return str(config.LIVE_DATABASE_PATH)
+
+
+def _open_live() -> sqlite3.Connection:
+    conn = db.connect(live_database_path())
+    db.initialize(conn)  # same schema as demo; created empty on first use, never seeded
+    return conn
 
 
 @asynccontextmanager
@@ -52,8 +68,8 @@ app = FastAPI(title="SewerSense API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
 
-def get_conn() -> Iterator[sqlite3.Connection]:
-    conn = db.connect(database_path())
+def get_conn(dataset: Dataset = Query(default="demo", description="demo (deterministic synthetic) or live (ingested web data)")) -> Iterator[sqlite3.Connection]:
+    conn = _open_live() if dataset == "live" else db.connect(database_path())
     try:
         yield conn
     finally:
@@ -84,7 +100,12 @@ def _summary(conn: sqlite3.Connection) -> SummaryResponse:
 @app.get("/api/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     provider = get_provider()
-    return HealthResponse(status="ok", extraction_mode="hybrid" if provider and provider.available() else "rules_fallback", llm_configured=bool(provider and provider.available()))
+    return HealthResponse(
+        status="ok",
+        extraction_mode="hybrid" if provider and provider.available() else "rules_fallback",
+        llm_configured=bool(provider and provider.available()),
+        live_sources=configured_sources(),
+    )
 
 
 @app.get("/api/summary", response_model=SummaryResponse)
@@ -121,9 +142,10 @@ def get_incident(incident_id: str, conn: sqlite3.Connection = Depends(get_conn))
 def get_evidence(incident_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     incident = hydrate_incident(_incident_row(conn, incident_id))
     reports = rows_to_dicts(conn.execute(
-        """SELECT id, source, source_handle, created_at, raw_text, geo_quality, locality, road, landmark, is_duplicate, duplicate_of,
-                  cluster_score, cluster_details_json, extraction_details_json
-           FROM reports WHERE incident_id = ? ORDER BY created_at""",
+        """SELECT r.id, r.source, r.source_handle, r.created_at, r.raw_text, r.geo_quality, r.locality, r.road, r.landmark, r.is_duplicate,
+                  r.duplicate_of, r.cluster_score, r.cluster_details_json, r.extraction_details_json,
+                  p.origin, p.url, p.title, p.published_at
+           FROM reports r LEFT JOIN report_provenance p ON p.report_id = r.id WHERE r.incident_id = ? ORDER BY r.created_at""",
         (incident_id,),
     ).fetchall())
     for report in reports:
@@ -165,7 +187,8 @@ def get_evidence(incident_id: str, conn: sqlite3.Connection = Depends(get_conn))
         "representative_reports": [
             {**{key: item[key] for key in ("id", "source", "source_handle", "created_at", "raw_text", "geo_quality", "locality", "road", "landmark", "is_duplicate", "duplicate_of", "cluster_score")},
              "cluster_details": item["cluster_details"] if item["cluster_details"] and "semantic" in item["cluster_details"] else None,
-             "extraction_mode": item["extraction"].get("mode")}
+             "extraction_mode": item["extraction"].get("mode"),
+             **{key: item[key] for key in ("origin", "url", "title", "published_at")}}
             for item in representative
         ],
         "total_reports": len(reports),
@@ -189,7 +212,9 @@ def heatmap(conn: sqlite3.Connection = Depends(get_conn)) -> list[list[float]]:
 
 
 @app.post("/api/simulate", response_model=SimulateResponse)
-def simulate(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+def simulate(dataset: Dataset = Query(default="demo"), conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    if dataset == "live":
+        raise HTTPException(status_code=409, detail="Simulation adds synthetic reports and only runs on the demo dataset")
     if not _write_lock.acquire(timeout=30):
         raise HTTPException(status_code=409, detail="Another simulation or reset is in progress")
     try:
@@ -216,12 +241,29 @@ def update_status(incident_id: str, update: StatusUpdate, conn: sqlite3.Connecti
 
 
 @app.post("/api/reset", response_model=ResetResponse)
-def reset(conn: sqlite3.Connection = Depends(get_conn)) -> ResetResponse:
+def reset(dataset: Dataset = Query(default="demo"), conn: sqlite3.Connection = Depends(get_conn)) -> ResetResponse:
     if not _write_lock.acquire(timeout=30):
         raise HTTPException(status_code=409, detail="Another simulation or reset is in progress")
     try:
-        service.seed_baseline(conn)
+        if dataset == "live":
+            db.recreate(conn)  # clears ingested live data; the demo database is untouched
+        else:
+            service.seed_baseline(conn)
     finally:
         _write_lock.release()
     top = conn.execute("SELECT id FROM incidents WHERE status != 'resolved' ORDER BY priority DESC, last_reported DESC LIMIT 1").fetchone()
     return ResetResponse(summary=_summary(conn), default_incident_id=top[0] if top else None)
+
+
+@app.post("/api/ingest", response_model=IngestResponse)
+def ingest(request: Optional[IngestRequest] = None) -> dict:
+    """Fetch Tavily/Apify results into the live dataset and run them through the existing pipeline."""
+    sources = list(dict.fromkeys((request or IngestRequest()).sources))
+    if not _write_lock.acquire(timeout=30):
+        raise HTTPException(status_code=409, detail="Another write operation is in progress")
+    conn = _open_live()
+    try:
+        return run_ingestion(conn, sources)
+    finally:
+        conn.close()
+        _write_lock.release()

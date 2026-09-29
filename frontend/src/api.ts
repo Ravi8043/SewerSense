@@ -1,6 +1,9 @@
 // The only HTTP boundary in the frontend.
 import type {
   BriefResponse,
+  Dataset,
+  IngestResponse,
+  LiveSource,
   CompactIncident,
   EvidenceResponse,
   FullIncident,
@@ -22,12 +25,21 @@ export class ApiError extends Error {
   }
 }
 
+// Which dataset every read/write targets. Demo is the default and the only one simulation uses.
+let currentDataset: Dataset = 'demo';
+export const setDataset = (dataset: Dataset) => {
+  currentDataset = dataset;
+};
+export const getDataset = () => currentDataset;
+
+const withDataset = (path: string) => (currentDataset === 'demo' ? path : `${path}${path.includes('?') ? '&' : '?'}dataset=${currentDataset}`);
+
 export const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${BASE_URL}${path}`, {
+    response = await fetch(`${BASE_URL}${withDataset(path)}`, {
       ...init,
       headers: { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers },
     });
@@ -68,4 +80,5 @@ export const api = {
   setStatus: (id: string, status: Status) =>
     request<StatusResponse>(`/incidents/${encodeURIComponent(id)}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
   reset: () => request<ResetResponse>('/reset', { method: 'POST' }),
+  ingest: (sources: LiveSource[]) => request<IngestResponse>('/ingest', { method: 'POST', body: JSON.stringify({ sources }) }),
 };

@@ -2,9 +2,9 @@
 
 ## Runtime and configuration
 
-Use FastAPI, Uvicorn, SQLAlchemy/SQLite, scikit-learn TF-IDF/cosine similarity, and NumPy PCA. Use a proprietary LLM SDK/client only behind an extraction-provider adapter. Keep dependency declarations in `backend/requirements.txt`; do not execute package installation or pip-upgrade commands as part of this documentation milestone.
+Use FastAPI, pip, SQLAlchemy/SQLite, scikit-learn TF-IDF/cosine similarity, and NumPy PCA. Keep dependency declarations in `backend/requirements.txt`; do not execute package installation or pip-upgrade commands as part of this documentation milestone.
 
-All tunable values live in `app/config.py`: database/cache paths, CORS origins, clustering coefficients/threshold, duplicate threshold, corridor parameters, priority weights, simulation size, and hybrid-extraction settings. The initial proprietary provider may use the original spec’s `ANTHROPIC_API_KEY` and `LLM_MODEL` (default `claude-sonnet-5`), but `LLM_PROVIDER`, `EXTRACTION_MODE=hybrid`, prompt schema version, timeout, and cache settings must be provider-neutral. A future open-source adapter uses separate endpoint/model variables without changing extractor results. Never include credentials in source, seed data, API responses, or logs.
+All tunable values live in `app/config.py`: database/cache paths, CORS origins, clustering coefficients/threshold, duplicate threshold, corridor parameters, priority weights, simulation size, and LLM settings. Read `GROQ_LLM_KEY`, `LLM_MODEL` (default `any qwen open source model`), `USE_LLM_EXTRACTION`, and an embeddings mode from environment variables only. Never include credentials in source, seed data, API responses, or logs.
 
 The local virtual environment is `backend/.venv`; see the README for the exact local runtime note.
 
@@ -25,7 +25,6 @@ Use SQLAlchemy models with a migration-free `create_all` approach for this one-d
 | `is_duplicate`, `duplicate_of`, `incident_id`, `batch_id` | pipeline relationships and audit fields |
 | `truth_incident` | generator test-only field; never selected by pipeline logic |
 | `cluster_score`, `cluster_details_json` | stored score and four components for evidence |
-| `extraction_details_json` | field provenance, confidence, reconciliation notes, provider/model/schema version; never stores a key or raw provider response |
 
 ### `incidents`
 
@@ -114,7 +113,7 @@ Rebuild the deterministic baseline using `seed.py` functionality, then return a 
 
 ## Brief-generation safety
 
-`brief.py` first creates a constrained fact payload containing only values from the incident and its representative report texts. Its LLM system instruction says: use supplied facts only; do not invent numbers, people, causes, or actions claimed as complete; mark recommendations as AI suggestions; distinguish reports from estimates. Validate model JSON against Pydantic and fall back to a deterministic template on every failure. Brief generation is a separate adapter concern from hybrid extraction and must not share an unvalidated provider response.
+`brief.py` first creates a constrained fact payload containing only values from the incident and its representative report texts. Its LLM system instruction says: use supplied facts only; do not invent numbers, people, causes, or actions claimed as complete; mark recommendations as AI suggestions; distinguish reports from estimates. Validate model JSON against Pydantic and fall back to a deterministic template on every failure.
 
 The template follows the same response shape and has two semantic groups:
 

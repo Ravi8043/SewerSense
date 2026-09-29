@@ -92,6 +92,20 @@ CREATE TABLE IF NOT EXISTS incidents (
 CREATE INDEX IF NOT EXISTS idx_incidents_priority ON incidents(priority DESC);
 CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
 
+-- Provenance for reports ingested from external sources (Tavily, Apify). Demo reports have no row.
+CREATE TABLE IF NOT EXISTS report_provenance (
+    report_id TEXT PRIMARY KEY,
+    origin TEXT NOT NULL,
+    url TEXT,
+    title TEXT,
+    original_content TEXT,
+    queries_json TEXT,
+    published_at TEXT,
+    ingested_at TEXT NOT NULL,
+    metadata_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_provenance_origin ON report_provenance(origin);
+
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -118,7 +132,7 @@ def initialize(conn: sqlite3.Connection) -> None:
 
 def recreate(conn: sqlite3.Connection) -> None:
     """Explicit, idempotent rebuild of the demo schema."""
-    conn.executescript("DROP TABLE IF EXISTS reports; DROP TABLE IF EXISTS incidents; DROP TABLE IF EXISTS meta;")
+    conn.executescript("DROP TABLE IF EXISTS reports; DROP TABLE IF EXISTS incidents; DROP TABLE IF EXISTS meta; DROP TABLE IF EXISTS report_provenance;")
     initialize(conn)
 
 

@@ -10,6 +10,17 @@ const DETAIL_ZOOM = 13; // below this, only priority >= 35 or the top 15 are dra
 const TOP_N_WHEN_ZOOMED_OUT = 15;
 
 // CARTO's dark basemap now requires an API key, so the default is Esri's keyless Dark Gray Canvas.
+//CARTO Dark Matter
+//       ↓
+// Requires API key
+//        ↓
+// Not convenient as a universal default
+
+// the application chooses:
+
+// Esri Dark Gray Canvas
+//        ↓
+// Used as the default
 // Override with VITE_TILE_URL / VITE_TILE_ATTRIBUTION (e.g. a keyed CARTO dark_all URL).
 const ENV = import.meta.env;
 const CUSTOM_TILES = ENV.VITE_TILE_URL as string | undefined;

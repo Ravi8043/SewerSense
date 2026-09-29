@@ -29,9 +29,10 @@ interface Props {
   counts: Record<QueueFilter, number>;
   newIds: Set<string>;
   updatedIds: Set<string>;
+  emptyMessage?: string;
 }
 
-export function IncidentQueue({ incidents, totalLoaded, selectedId, onSelect, loading, error, onRetry, filter, onFilter, counts, newIds, updatedIds }: Props) {
+export function IncidentQueue({ incidents, totalLoaded, selectedId, onSelect, loading, error, onRetry, filter, onFilter, counts, newIds, updatedIds, emptyMessage }: Props) {
   const selectedRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     selectedRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -75,7 +76,7 @@ export function IncidentQueue({ incidents, totalLoaded, selectedId, onSelect, lo
           </div>
         ) : incidents.length === 0 ? (
           <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-ss-textmuted">
-            No incidents match this filter.
+            {emptyMessage ?? 'No incidents match this filter.'}
           </div>
         ) : (
           <ul className="divide-y divide-ss-border/60">

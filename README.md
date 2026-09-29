@@ -41,6 +41,34 @@ $env:LLM_MODEL = "claude-sonnet-5"         # default from the spec; claude-sonne
 
 The top bar shows `Extraction: hybrid (rules + LLM)` or `Extraction: rules mode`. See `backend/.env.example` for timeout, concurrency, and latency-budget settings. The same key also enables LLM-written response briefs (validated; template fallback on any failure).
 
+## Live web data (optional): Tavily + Apify
+
+The deterministic demo is unchanged and needs no keys. Live ingestion is an **input adapter** only: Tavily and Apify results are normalized into the same `IncomingReport` the simulator produces and run through the *existing* extraction, de-duplication, clustering and scoring. Live reports are stored in a separate SQLite file (`backend/data/sewersense-live.sqlite`, same schema), so real articles never merge into the synthetic demo incidents.
+
+1. Fill in `.env` at the project root (template: `.env.example`). Real environment variables override the file.
+
+   | Variable | Needed for | Where to get it |
+   | --- | --- | --- |
+   | `TAVILY_API_KEY` | Tavily web/news search | https://app.tavily.com |
+   | `APIFY_API_TOKEN` | Apify Actors | https://console.apify.com/settings/integrations |
+   | `APIFY_ACTOR_ID` | which Actor to run | default in `.env`: `apify~google-search-scraper` |
+   | `APIFY_ACTOR_INPUT` | JSON input for that Actor | default in `.env` searches Hyderabad sewage terms |
+   | `APIFY_UNWIND` | flatten nested results (`organicResults` for SERP Actors) | leave empty for flat datasets |
+
+   Either source alone is enough. `TAVILY_QUERIES` (pipe-separated), `TAVILY_MAX_RESULTS`, `TAVILY_TIME_RANGE`, `APIFY_MAX_ITEMS` and `APIFY_TIMEOUT_SECONDS` are optional.
+2. Restart the backend, switch the top bar to **Live web data**, and click **Fetch live data**. The banner shows per-source counts (found / new / duplicates / off-topic) and the resulting incident count; **Clear live data** empties only the live dataset.
+3. Evidence for live reports links to the original article or post. Author names are never stored; they are hashed into pseudonymous handles.
+
+API: `POST /api/ingest` with `{"sources": ["tavily", "apify"]}` returns per-source `retrieved_count`, `normalized_count`, `inserted_count`, `duplicate_count`, `rejected_count`, `out_of_scope_count`, `status` and the pipeline summary. Every existing read route accepts `?dataset=live` (default `demo`); `/api/simulate` refuses the live dataset.
+
+Failure behaviour: a missing key reports `not_configured`, a failed source reports `failed` with a non-secret reason, and the other source is still processed. The same article returned by several queries or by both sources becomes one report (its queries and the other source are kept in provenance); re-fetching never re-inserts known articles; near-identical reposts are handled by the existing duplicate rule.
+
+Real-API smoke test (uses your keys, writes to a throwaway database):
+
+```powershell
+& .\backend\.venv\Scripts\python.exe backend\scripts\smoke_live_ingest.py
+```
+
 ## Demo script (≈5 minutes)
 
 1. **Baseline** — KPIs, the priority-sorted queue, heat (report density) and incident markers on the dark map. Everything is computed from SQLite.
@@ -92,7 +120,7 @@ API (all JSON, errors as `{"detail": ...}`): `GET /api/summary`, `GET /api/incid
 ## Tests and verification
 
 ```powershell
-cd backend; ..\backend\.venv\Scripts\python.exe -m pytest -q      # 72 tests, no key or network needed
+cd backend; ..\backend\.venv\Scripts\python.exe -m pytest -q      # 85 tests, no key or network needed; Tavily/Apify are mocked
 npm --prefix frontend run typecheck
 npm --prefix frontend run build
 ```
