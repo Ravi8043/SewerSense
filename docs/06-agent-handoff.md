@@ -6,11 +6,11 @@ This document is the entry point for a coding agent continuing SewerSense. It ma
 
 ## Current repository state
 
-- The repository has an agreed, detailed implementation plan only; application source files have not yet been built.
-- `backend/.venv` exists under the repository and was created with Python 3.14.7.
-- The requested project target remains Python 3.11-compatible code. Python 3.11 was not found in the local launcher.
-- No `pip` command was run, installed, or upgraded during setup.
-- All current project files are contained under `C:\Users\User\Desktop\SewerSense`.
+- **MVP implemented and verified (2026-09-29).** Backend (FastAPI + SQLite pipeline, hybrid extraction with provider adapters, brief generation) and frontend (React/Vite/TypeScript/Tailwind + Leaflet command center) are complete; see the README for run instructions, the demo script, acceptance results, and deliberate deviations.
+- Verification: `backend/tests` (72 tests: gazetteer, generator, extraction with provider fixtures, pipeline acceptance criteria with ARI/purity, brief safety, every API route) pass; `npm run typecheck` and `npm run build` pass; the full demo flow was exercised in a browser against the running API.
+- `backend/.venv` uses Python 3.14.7 with the packages in `backend/requirements.txt` installed; pip itself was not upgraded. Code stays Python 3.11-compatible.
+- The live LLM path has only been tested with recorded fixtures (no key is bundled). Set `ANTHROPIC_API_KEY` to exercise it.
+- Optional post-MVP items already present: status controls and queue filter chips. Not implemented: anything in the charter's exclusion list.
 
 ## Required reading
 
@@ -27,9 +27,9 @@ Read these files in order before editing code:
 
 The pasted build specification is reflected in these documents. If a later coding choice conflicts with them, preserve the charter and pipeline invariants unless the user changes scope.
 
-## First implementation task
+## Next safe actions
 
-Start at Phase 1: create the backend package, configuration constants, models, schemas, gazetteer fixtures, and geographic bound tests. Do not jump to frontend or endpoint code. Use `backend/.venv` for every backend command.
+The build phases in `05-build-plan-and-quality-gates.md` are complete. Further work should start by running the test suite, then make small verified changes. Tune clustering or scoring only through `backend/app/config.py` constants and re-run `pytest` (the acceptance tests print ARI/purity).
 
 ## Non-negotiable implementation rules
 

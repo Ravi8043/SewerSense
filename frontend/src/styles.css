@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #0b0f14;
+  color: #e2e8f0;
+  font-family: Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #1c2431;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Leaflet dark theme */
+.leaflet-container {
+  background: #0b0f14;
+  font-family: Inter, system-ui, sans-serif;
+}
+.leaflet-control-zoom {
+  border: 1px solid #1c2431 !important;
+}
+.leaflet-control-zoom a {
+  background: #111821 !important;
+  color: #e2e8f0 !important;
+  border-bottom-color: #1c2431 !important;
+}
+.leaflet-control-zoom a:hover {
+  background: #1c2431 !important;
+}
+.leaflet-control-attribution {
+  background: rgba(11, 15, 20, 0.8) !important;
+  color: #94a3b8 !important;
+  font-size: 11px;
+}
+.leaflet-control-attribution a {
+  color: #67e8f9 !important;
+}
+.leaflet-tooltip {
+  background: #111821;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+.leaflet-tooltip-top::before {
+  border-top-color: #334155;
+}
+.ss-map-label {
+  background: rgba(17, 24, 33, 0.92);
+  border-color: #f59e0b;
+  color: #fde68a;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.ss-heat-layer {
+  position: absolute;
+  mix-blend-mode: screen;
+}
+
+.ss-corridor {
+  filter: drop-shadow(0 0 6px rgba(254, 243, 199, 0.8));
+}
+
+/* Restrained pulse ring for critical or rapidly escalating incidents */
+.ss-pulse {
+  display: block;
+  border-radius: 9999px;
+  border: 2px solid var(--pulse);
+  opacity: 0;
+  animation: ss-pulse 2.4s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes ss-pulse {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ss-pulse,
+  .animate-flash,
+  .animate-pulse {
+    animation: none !important;
+  }
+}
