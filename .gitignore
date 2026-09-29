@@ -1,0 +1,18 @@
+# Local Python runtime
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/.mypy_cache/
+
+# Local database and generated caches
+backend/data/*.db
+backend/data/*.sqlite
+backend/data/extraction-cache/
+
+# Frontend local artefacts
+frontend/node_modules/
+frontend/dist/
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
